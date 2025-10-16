@@ -33,12 +33,37 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     if (!searchTerm.trim()) {
       setFilteredRegistrations(registrations)
     } else {
-      const filtered = registrations.filter(registration => 
-        registration.ticket_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        registration.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        registration.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        registration.phone.includes(searchTerm)
-      )
+      const search = searchTerm.toLowerCase()
+      const filtered = registrations.filter(registration => {
+        // Search in main registration details
+        const mainMatch = 
+          registration.ticket_id.toLowerCase().includes(search) ||
+          registration.name.toLowerCase().includes(search) ||
+          registration.email.toLowerCase().includes(search) ||
+          registration.phone.includes(search)
+        
+        // Search in group members if it's a group registration
+        if (registration.registration_type === 'GROUP' && registration.group_members) {
+          const memberMatch = registration.group_members.some((member: any) =>
+            member.name?.toLowerCase().includes(search) ||
+            member.email?.toLowerCase().includes(search) ||
+            member.phone?.includes(search)
+          )
+          return mainMatch || memberMatch
+        }
+        
+        // Search in member entries if available
+        if (registration.member_entries) {
+          const entryMatch = registration.member_entries.some(member =>
+            member.name?.toLowerCase().includes(search) ||
+            member.email?.toLowerCase().includes(search) ||
+            member.phone?.includes(search)
+          )
+          return mainMatch || entryMatch
+        }
+        
+        return mainMatch
+      })
       setFilteredRegistrations(filtered)
     }
   }, [registrations, searchTerm])
@@ -165,6 +190,35 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     setExpandedGroups(newExpanded)
   }
 
+  const updateMemberEntry = async (ticketId: string, memberName: string, entered: boolean) => {
+    try {
+      const response = await fetch('/api/admin/member-entry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticket_id: ticketId,
+          member_name: memberName,  // Changed from member_email to member_name
+          entered,
+          security_officer: securityOfficer || 'Security'
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update member entry status')
+      }
+
+      await fetchRegistrations() // Refresh data
+      setSuccessMessage(`Entry status updated for ${memberName}`)
+      setShowSuccess(true)
+      setTimeout(() => setShowSuccess(false), 3000)
+    } catch (error) {
+      console.error('Error updating member entry:', error)
+      setError('Failed to update member entry status')
+    }
+  }
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value)
   }
@@ -175,6 +229,17 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-IN')
+  }
+
+  const calculateAge = (dateOfBirth: string) => {
+    const today = new Date()
+    const birthDate = new Date(dateOfBirth)
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const monthDiff = today.getMonth() - birthDate.getMonth()
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+    return age
   }
 
   const getStatusBadge = (status: string) => {
@@ -223,10 +288,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               <div className="relative w-full sm:w-auto">
                 <input
                   type="text"
-                  placeholder="Search by ticket ID, name, email..."
+                  placeholder="Search by ticket ID, name, email, phone, group member..."
                   value={searchTerm}
                   onChange={handleSearchChange}
-                  className="w-full sm:w-64 px-3 py-2 pl-9 bg-neutral-800 border border-neutral-700 text-white placeholder-neutral-400 rounded-lg text-sm focus:outline-none focus:border-neutral-600"
+                  className="w-full sm:w-80 px-3 py-2 pl-10 bg-neutral-800 border border-neutral-700 text-white placeholder-neutral-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
                 <svg className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -284,32 +349,57 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         )}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-lg hover:border-neutral-700 transition-colors">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
             <div className="text-2xl font-bold text-white mb-1">
               {searchTerm ? filteredRegistrations.length : registrations.length}
             </div>
-            <div className="text-neutral-400 text-sm">
+            <div className="text-neutral-400 text-xs">
               {searchTerm ? 'Filtered Results' : 'Total Registrations'}
             </div>
           </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-lg hover:border-neutral-700 transition-colors">
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
             <div className="text-2xl font-bold text-green-400 mb-1">
               {(searchTerm ? filteredRegistrations : registrations).filter(r => r.payment_verified).length}
             </div>
-            <div className="text-neutral-400 text-sm">Payment Verified</div>
+            <div className="text-neutral-400 text-xs">Payment Verified</div>
           </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-lg hover:border-neutral-700 transition-colors">
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
             <div className="text-2xl font-bold text-yellow-400 mb-1">
               {(searchTerm ? filteredRegistrations : registrations).filter(r => r.entry_status === 'ENTERED').length}
             </div>
-            <div className="text-neutral-400 text-sm">Attendees Entered</div>
+            <div className="text-neutral-400 text-xs">Groups Entered</div>
           </div>
-          <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-lg hover:border-neutral-700 transition-colors">
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
             <div className="text-2xl font-bold text-purple-400 mb-1">
               {(searchTerm ? filteredRegistrations : registrations).reduce((sum, r) => sum + r.total_attendees, 0)}
             </div>
-            <div className="text-neutral-400 text-sm">Total Attendees</div>
+            <div className="text-neutral-400 text-xs">Total Attendees</div>
+          </div>
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
+            <div className="text-2xl font-bold text-blue-400 mb-1">
+              {(searchTerm ? filteredRegistrations : registrations).reduce((sum, r) => {
+                if (r.registration_type === 'GROUP') {
+                  return sum + (r.members_entered_count || 0) + (r.entry_status === 'ENTERED' ? 1 : 0)
+                }
+                return sum + (r.entry_status === 'ENTERED' ? 1 : 0)
+              }, 0)}
+            </div>
+            <div className="text-neutral-400 text-xs">Individual Entries</div>
+          </div>
+          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-lg hover:border-neutral-700 transition-colors">
+            <div className="text-2xl font-bold text-orange-400 mb-1">
+              {Math.round(
+                ((searchTerm ? filteredRegistrations : registrations).reduce((sum, r) => {
+                  if (r.registration_type === 'GROUP') {
+                    return sum + (r.members_entered_count || 0) + (r.entry_status === 'ENTERED' ? 1 : 0)
+                  }
+                  return sum + (r.entry_status === 'ENTERED' ? 1 : 0)
+                }, 0) / 
+                (searchTerm ? filteredRegistrations : registrations).reduce((sum, r) => sum + r.total_attendees, 0)) * 100
+              ) || 0}%
+            </div>
+            <div className="text-neutral-400 text-xs">Entry Rate</div>
           </div>
         </div>
 
@@ -405,11 +495,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {registration.registration_type === 'GROUP' && registration.group_members ? (
+                      {registration.registration_type === 'GROUP' ? (
                         <div className="text-sm">
                           <button
                             onClick={() => toggleGroupExpansion(registration.ticket_id)}
-                            className="flex items-center text-blue-400 hover:text-blue-300 transition-colors"
+                            className="flex items-center text-blue-400 hover:text-blue-300 transition-colors font-medium"
                           >
                             <svg 
                               className={`w-4 h-4 mr-1 transform transition-transform ${expandedGroups.has(registration.ticket_id) ? 'rotate-90' : ''}`}
@@ -418,22 +508,119 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                             >
                               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                             </svg>
-                            {Array.isArray(registration.group_members) ? registration.group_members.length : 0} members
+                            4 members
+                            {registration.member_entries && registration.member_entries.length > 0 && (
+                              <span className="ml-2 text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded-full border border-blue-800">
+                                {registration.members_entered_count || 0}/3 group members
+                              </span>
+                            )}
                           </button>
-                          {expandedGroups.has(registration.ticket_id) && Array.isArray(registration.group_members) && (
-                            <div className="mt-2 pl-5 space-y-2">
-                              {registration.group_members.map((member: any, index: number) => (
-                                <div key={index} className="bg-neutral-800 p-2 rounded text-xs">
-                                  <div className="font-medium text-white">{member.name}</div>
-                                  <div className="text-neutral-400">{member.email}</div>
-                                  <div className="text-neutral-400">{member.phone}</div>
-                                  {member.date_of_birth && (
-                                    <div className="text-neutral-400">
-                                      DOB: {new Date(member.date_of_birth).toLocaleDateString()}
+                          
+                          {expandedGroups.has(registration.ticket_id) && (
+                            <div className="mt-3 space-y-2">
+                              <div className="text-xs text-neutral-500 mb-2 italic">
+                                💡 Track each person individually - Main registrant and group members are separate
+                              </div>
+                              
+                              {/* Main registrant */}
+                              <div className="bg-neutral-800/50 border border-neutral-700 p-3 rounded-lg">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex-1">
+                                    <div className="font-medium text-white flex items-center">
+                                      {registration.name}
+                                      <span className="ml-2 text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded border border-blue-800">Main Registrant</span>
                                     </div>
-                                  )}
+                                    <div className="text-xs text-neutral-400 mt-1">{registration.email}</div>
+                                    <div className="text-xs text-neutral-400">{registration.phone}</div>
+                                    <div className="text-xs text-neutral-400">
+                                      DOB: {new Date(registration.date_of_birth).toLocaleDateString()} (Age: {registration.calculated_age})
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    {registration.entry_status === 'ENTERED' ? (
+                                      <span className="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded font-medium">✓ Entered</span>
+                                    ) : (
+                                      <button
+                                        onClick={() => showEntryConfirmation(registration.ticket_id, 'ENTERED', registration.name)}
+                                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded font-medium transition-colors"
+                                      >
+                                        Mark Entry
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              ))}
+                              </div>
+
+                              {/* Group members */}
+                              {registration.member_entries && registration.member_entries.length > 0 ? (
+                                registration.member_entries.map((member, index) => (
+                                  <div key={index} className="bg-neutral-800/50 border border-neutral-700 p-3 rounded-lg">
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex-1">
+                                        <div className="font-medium text-white flex items-center">
+                                          {member.name}
+                                          <span className="ml-2 text-xs bg-neutral-700 text-neutral-300 px-2 py-0.5 rounded">Member {index + 1}</span>
+                                        </div>
+                                        <div className="text-xs text-neutral-400 mt-1">{member.email}</div>
+                                        <div className="text-xs text-neutral-400">{member.phone}</div>
+                                        {member.date_of_birth && (
+                                          <div className="text-xs text-neutral-400">
+                                            DOB: {new Date(member.date_of_birth).toLocaleDateString()} (Age: {calculateAge(member.date_of_birth)})
+                                          </div>
+                                        )}
+                                        {member.entered && member.entry_time && (
+                                          <div className="text-xs text-green-400 mt-1 flex items-center">
+                                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                            </svg>
+                                            Entered: {formatDate(member.entry_time)}
+                                            {member.security_officer && ` by ${member.security_officer}`}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        {member.entered ? (
+                                          <>
+                                            <span className="text-xs bg-green-900/50 text-green-300 px-2 py-1 rounded font-medium">✓ Entered</span>
+                                            <button
+                                              onClick={() => updateMemberEntry(registration.ticket_id, member.name, false)}
+                                              className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-2 py-1 rounded font-medium transition-colors"
+                                            >
+                                              Reset
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            onClick={() => updateMemberEntry(registration.ticket_id, member.name, true)}
+                                            className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded font-medium transition-colors"
+                                          >
+                                            Mark Entry
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : registration.group_members && Array.isArray(registration.group_members) ? (
+                                registration.group_members.map((member: any, index: number) => (
+                                  <div key={index} className="bg-neutral-800/50 border border-neutral-700 p-3 rounded-lg">
+                                    <div className="font-medium text-white">{member.name}</div>
+                                    <div className="text-xs text-neutral-400 mt-1">{member.email}</div>
+                                    <div className="text-xs text-neutral-400">{member.phone}</div>
+                                    {member.date_of_birth && (
+                                      <div className="text-xs text-neutral-400">
+                                        DOB: {new Date(member.date_of_birth).toLocaleDateString()} (Age: {calculateAge(member.date_of_birth)})
+                                      </div>
+                                    )}
+                                    <div className="text-xs text-orange-400 mt-2 flex items-center">
+                                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                      Run the enhanced SQL script to enable individual entry tracking
+                                    </div>
+                                  </div>
+                                ))
+                              ) : null}
                             </div>
                           )}
                         </div>

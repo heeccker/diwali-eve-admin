@@ -55,8 +55,19 @@ export type EntryStatus = {
   entry_status: 'NOT_ENTERED' | 'ENTERED'
   entry_time?: string
   security_officer?: string
+  member_entries?: MemberEntry[]
   created_at: string
   updated_at: string
+}
+
+export type MemberEntry = {
+  name: string
+  email: string
+  phone: string
+  date_of_birth: string
+  entered: boolean
+  entry_time?: string
+  security_officer?: string
 }
 
 export type RegistrationSummary = Registration & {
@@ -69,4 +80,6 @@ export type RegistrationSummary = Registration & {
   entry_status?: 'NOT_ENTERED' | 'ENTERED'
   entry_time?: string
   security_officer?: string
+  member_entries?: MemberEntry[]
+  members_entered_count?: number
 }

@@ -26,42 +26,58 @@ export async function GET(request: NextRequest) {
 
     console.log('Authenticated successfully, fetching registrations...')
     
-    // Try to fetch from registrations table first if registration_summary doesn't exist
+    // Fetch from registration_summary view which includes member_entries
     const { data: registrations, error } = await supabaseAdmin
-      .from('registrations')
-      .select(`
-        *,
-        payment_verifications(verified, payment_screenshot_url),
-        entry_status(entry_status, entry_time, security_officer)
-      `)
-      .order('created_at', { ascending: false })
+      .from('registration_summary')
+      .select('*')
+      .order('registration_date', { ascending: false })
 
     if (error) {
       console.error('Supabase error:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch registrations', details: error.message },
-        { status: 500 }
-      )
+      
+      // Fallback to direct table query if view doesn't exist
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from('registrations')
+        .select(`
+          *,
+          payment_verifications(verified, payment_screenshot_url, upi_reference),
+          entry_status(entry_status, entry_time, security_officer, member_entries)
+        `)
+        .order('created_at', { ascending: false })
+
+      if (fallbackError) {
+        console.error('Fallback query error:', fallbackError)
+        return NextResponse.json(
+          { error: 'Failed to fetch registrations', details: fallbackError.message },
+          { status: 500 }
+        )
+      }
+
+      // Transform fallback data
+      const transformedFallback = fallbackData?.map(reg => ({
+        ...reg,
+        total_attendees: reg.registration_type === 'SINGLE' ? 1 : 4,
+        amount_due: reg.registration_type === 'SINGLE' ? 500 : 1600,
+        payment_verified: reg.payment_verifications?.[0]?.verified || false,
+        payment_screenshot_url: reg.payment_verifications?.[0]?.payment_screenshot_url || null,
+        upi_reference: reg.payment_verifications?.[0]?.upi_reference || null,
+        registration_date: reg.created_at,
+        calculated_age: reg.date_of_birth ? 
+          new Date().getFullYear() - new Date(reg.date_of_birth).getFullYear() : null,
+        entry_status: reg.entry_status?.[0]?.entry_status || 'NOT_ENTERED',
+        entry_time: reg.entry_status?.[0]?.entry_time || null,
+        security_officer: reg.entry_status?.[0]?.security_officer || null,
+        member_entries: reg.entry_status?.[0]?.member_entries || [],
+        members_entered_count: reg.entry_status?.[0]?.member_entries ? 
+          reg.entry_status[0].member_entries.filter((m: any) => m.entered).length : 0
+      })) || []
+
+      return NextResponse.json(transformedFallback)
     }
 
     console.log('Fetched registrations:', registrations?.length || 0)
 
-    // Transform the data to match the expected format
-    const transformedData = registrations?.map(reg => ({
-      ...reg,
-      total_attendees: reg.registration_type === 'SINGLE' ? 1 : 4,
-      amount_due: reg.registration_type === 'SINGLE' ? 500 : 1600,
-      payment_verified: reg.payment_verifications?.[0]?.verified || false,
-      payment_screenshot_url: reg.payment_verifications?.[0]?.payment_screenshot_url || null,
-      registration_date: reg.created_at,
-      calculated_age: reg.date_of_birth ? 
-        new Date().getFullYear() - new Date(reg.date_of_birth).getFullYear() : null,
-      entry_status: reg.entry_status?.[0]?.entry_status || 'NOT_ENTERED',
-      entry_time: reg.entry_status?.[0]?.entry_time || null,
-      security_officer: reg.entry_status?.[0]?.security_officer || null
-    })) || []
-
-    return NextResponse.json(transformedData)
+    return NextResponse.json(registrations)
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json(
