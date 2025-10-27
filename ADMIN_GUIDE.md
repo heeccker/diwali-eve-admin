@@ -41,7 +41,7 @@ For each registration, you can:
 #### 🔧 **Admin Actions**
 - **Mark Entered/Not Entered**: For security to track who has arrived
 - **Verify/Reject Payment**: Approve payment screenshots
-- **Security Officer Tracking**: Record who verified entry
+ - **Security Officer Tracking**: Record who verified entry
 
 ### 5. **Security Features**
 - Password-protected admin access
